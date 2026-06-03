@@ -1,12 +1,29 @@
-from .featurizer import lunar_featurizer, constant_featurizer, make_bin_edges
+from .featurizer import lunar_featurizer, constant_featurizer, interval_featurizer, make_bin_edges
 from .skeleton import make_table, run_episode, run_training, evaluate
-from .agents import td_agent, melioration_agent, softmax
+from .agents import td_agent, melioration_agent, expected_sarsa_agent, boltzmann_td_agent, bush_mosteller_step, softmax
 from .schedules import ConcurrentVI, run_matching, fit_generalized_matching
+from .operant import (
+    FR,
+    VR,
+    FI,
+    VI,
+    make_schedule,
+    OperantChamber,
+    ConcurrentSchedule,
+    MeliorationTrap,
+    run_continuing,
+    melioration_trap_experiment,
+    fit_matching_general,
+    schedule_matching_table,
+    extinction_experiment,
+    operant_battery,
+)
 from .differentiate import differentiate, granularity_sweep, policy_divergence, collect_states, make_lunar
 
 __all__ = [
     "lunar_featurizer",
     "constant_featurizer",
+    "interval_featurizer",
     "make_bin_edges",
     "make_table",
     "run_episode",
@@ -14,10 +31,27 @@ __all__ = [
     "evaluate",
     "td_agent",
     "melioration_agent",
+    "expected_sarsa_agent",
+    "boltzmann_td_agent",
+    "bush_mosteller_step",
     "softmax",
     "ConcurrentVI",
     "run_matching",
     "fit_generalized_matching",
+    "FR",
+    "VR",
+    "FI",
+    "VI",
+    "make_schedule",
+    "OperantChamber",
+    "ConcurrentSchedule",
+    "MeliorationTrap",
+    "run_continuing",
+    "melioration_trap_experiment",
+    "fit_matching_general",
+    "schedule_matching_table",
+    "extinction_experiment",
+    "operant_battery",
     "differentiate",
     "granularity_sweep",
     "policy_divergence",

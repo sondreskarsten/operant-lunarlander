@@ -28,6 +28,13 @@ def constant_featurizer(state=0):
     return featurize
 
 
+def interval_featurizer(n_bins=20, lo=0.0, hi=1.0, dim=0):
+    edges = np.linspace(lo, hi, n_bins + 1)[1:-1]
+    def featurize(obs):
+        return (int(np.digitize(obs[dim], edges)),)
+    return featurize
+
+
 if __name__ == "__main__":
     f = lunar_featurizer()
     print(f(LUNAR_LOW), f(LUNAR_HIGH))

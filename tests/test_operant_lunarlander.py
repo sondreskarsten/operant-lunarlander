@@ -73,6 +73,63 @@ def test_concurrent_vi_delivers_reinforcement():
     assert got > 0
 
 
+def test_operant_chamber_extinction_zeroes_reward():
+    from operant_lunarlander.operant import OperantChamber, make_schedule
+    rng = np.random.default_rng(0)
+    env = OperantChamber(schedule=make_schedule("VR", 3), rng=rng)
+    env.reset(seed=0)
+    acq = sum(env.step(0)[1] for _ in range(2000))
+    env.extinction = True
+    ext = sum(env.step(0)[1] for _ in range(2000))
+    assert acq > 0
+    assert ext <= 0
+
+
+def test_schedule_factory_types():
+    from operant_lunarlander.operant import make_schedule, FR, VR, FI, VI
+    assert isinstance(make_schedule("FR", 2), FR)
+    assert isinstance(make_schedule("VR", 2), VR)
+    assert isinstance(make_schedule("FI", 2), FI)
+    assert isinstance(make_schedule("VI", 2), VI)
+
+
+def test_melioration_trap_points():
+    from operant_lunarlander.operant import MeliorationTrap
+    e = MeliorationTrap()
+    assert e.matching_point()["x_match"] > e.optimum()["x_opt"]
+    assert e.optimum()["rate_opt"] > e.matching_point()["rate_match"]
+
+
+def test_trap_maximizer_beats_melioration():
+    from operant_lunarlander.operant import melioration_trap_experiment
+    out = melioration_trap_experiment(n_steps=30000, seed=0)
+    mel = out["rules"]["melioration"]["reward_rate_tail"]
+    esarsa = out["rules"]["expected_sarsa"]["reward_rate_tail"]
+    assert esarsa > mel
+    assert out["rules"]["melioration"]["x_tail"] > 0.6
+
+
+def test_schedule_matching_interval_graded_ratio_exclusive():
+    from operant_lunarlander.operant import schedule_matching_table
+    t = schedule_matching_table(n_steps=12000, seed=0)
+    assert 0.6 <= t["conc_VI_VI"]["slope"] <= 1.4
+    assert t["conc_VR_VR"]["mean_exclusivity"] > 0.9
+
+
+def test_extinction_acquires_and_extinguishes():
+    from operant_lunarlander.operant import extinction_experiment
+    out = extinction_experiment(acquire_steps=6000, extinction_steps=6000, seed=0)
+    assert out["CRF"]["acq_response_rate"] > 0.8
+    assert out["CRF"]["steps_to_extinction"] < 6000
+
+
+def test_bush_mosteller_simplex():
+    from operant_lunarlander.agents import bush_mosteller_step
+    p = bush_mosteller_step([0.5, 0.5], 0, True, alpha=0.2)
+    assert abs(p.sum() - 1.0) < 1e-9
+    assert p[0] > 0.5
+
+
 def test_matching_law_holds():
     r = fit_generalized_matching(n_steps=12000, seed=0)
     assert 0.6 <= r["slope"] <= 1.4

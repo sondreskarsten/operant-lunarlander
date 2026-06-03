@@ -30,9 +30,10 @@ The agreed design named a Bush–Mosteller melioration agent. Literal two-action
 src/operant_lunarlander/
   featurizer.py     binning over the 8-dim LunarLander obs -> discrete state key (configurable n_bins); constant featurizer for stateless schedules
   skeleton.py       agent-agnostic table + episode/training/eval rollouts; the table holds n_actions floats per state, interpreted as Q (a) or preference H (b)
-  agents.py         td_agent (a), melioration_agent (b); each exposes select / update / greedy / action_dist
-  schedules.py      ConcurrentVI diagnostic env + generalized-matching-law fit
-  differentiate.py  headline harness: train both, compare return, policy divergence, matching control, granularity sweep
+  agents.py         five rules: td_agent (Q-learning), expected_sarsa_agent, boltzmann_td_agent, melioration_agent (gradient-bandit), bush_mosteller_step (probability-space); each exposes select / update / greedy / action_dist
+  schedules.py      ConcurrentVI diagnostic env + generalized-matching-law fit (the matching positive control)
+  operant.py        operant lever battery: schedule family (FR/VR/FI/VI), OperantChamber (magnitude / punishment / response-cost / extinction), ConcurrentSchedule (VI-VI/VR-VR/VI-VR), MeliorationTrap (the matching-vs-maximizing discriminator), and the experiment runners
+  differentiate.py  LunarLander harness: train rules, compare return, policy divergence, matching control, granularity sweep
   ceiling.py        optional SB3 PPO optimality ceiling (separate from the core comparison)
 ```
 
@@ -44,15 +45,60 @@ Before trusting (b)'s behaviour on a sequential MDP, validate it in the domain w
 
 Result: **slope a = 0.973, bias b = 1.000** — strict, unbiased matching. (b) is a faithful operant learner; its LunarLander behaviour is melioration, not a bug.
 
-Note: concVI-VI validates lawful reinforcement-proportional allocation but is a *weak* discriminator between matching and maximizing, because on VI schedules the matching allocation is itself near reward-maximizing. Clean separation of matching from maximizing requires ratio (concVR) or melioration-trap schedules — a planned addition.
+Note: concVI-VI validates lawful reinforcement-proportional allocation but is a *weak* discriminator between matching and maximizing, because on VI schedules the matching allocation is itself near reward-maximizing. Clean separation requires the melioration trap (below).
+
+## Operant levers
+
+The instrument exposes the canonical operant manipulations on low-dimensional, tractable envs (where, unlike LunarLander, tabular learning is not coverage-starved, so the learning-rule differences are not masked by representation).
+
+### Schedule family — interval vs ratio (`schedule_matching_table`)
+
+Melioration run across seven ratio conditions on each of three concurrent schedules, fitting the generalized matching law:
+
+| Schedule | slope a | bias b | mean exclusivity |
+|---|---|---|---|
+| conc VI-VI | 0.973 | 1.00 | 0.70 |
+| conc VI-VR | 0.966 | 1.02 | 0.69 |
+| conc VR-VR | undefined | — | 0.97 |
+
+Interval schedules produce graded matching (slope ≈ 1); the ratio-ratio schedule produces near-exclusive choice of the richer ratio, so the log-ratio slope is mathematically undefined (one alternative receives ~0 reinforcers). This is the textbook interval-vs-ratio distinction — and the reason VR-VR cannot separate matching from maximizing (both predict exclusivity there).
+
+### Melioration trap — the discriminator (`melioration_trap_experiment`)
+
+Two alternatives; A's local reinforcement probability falls as A is chosen more (`p_A = a − c·x`, x = leaky fraction of recent A-choices), B's is constant (`p_B = b`). Parameters chosen so the **matching point (x_m = 0.8, rate 0.40) ≠ the optimum (x* = 0.4, rate 0.48)**. The observation is x, binned; the identical featurizer/skeleton run all rules.
+
+| Rule | tail x | tail reward rate |
+|---|---|---|
+| optimum (analytic) | 0.40 | 0.48 |
+| matching point (analytic) | 0.80 | 0.40 |
+| expected-SARSA (maximizing) | 0.51 | 0.47 |
+| Q-learning (maximizing) | 0.76 | 0.41 |
+| melioration | 1.00 | 0.30 |
+
+Melioration is **caught** — local reinforcement drives it past even the matching point into near-exclusive A, at rate 0.30. The maximizing rules **escape** via foresight over the allocation-state: expected-SARSA reaches near-optimal 0.47, Q-learning partially escapes at 0.41. This is the clean maximization-vs-melioration separation concVI-VI could not provide, and it also resolves *within* the maximizing family (expected-SARSA > Q-learning under these continuing, self-induced-state dynamics).
+
+### Extinction (`extinction_experiment`)
+
+Acquire responding (respond/withhold chamber, small response cost) under three schedules, then withhold reinforcement:
+
+| Acquisition schedule | acq response rate | steps to extinction |
+|---|---|---|
+| CRF (FR1) | 0.98 | 444 |
+| VR5 | 0.97 | 380 |
+| VI10 | 0.96 | 322 |
+
+All schedules acquire, then extinguish, with a clean monotonic ordering: CRF (highest acquired value) is most resistant. Note this is the acquired-value-magnitude effect and is **anti-PREE** — the real partial-reinforcement-extinction effect (partial *more* resistant) requires discrimination/sequential mechanisms that a simple value learner does not have. The lever is faithful; the molar PREE phenomenon is explicitly out of reach for this rule class.
+
+Other levers present on `OperantChamber`: reinforcement magnitude, punishment probability/magnitude, response cost.
 
 ## Run
 
 ```bash
 pip install -e .
-python -m operant_lunarlander.differentiate         # writes results/comparison.json
+python -m operant_lunarlander.differentiate         # LunarLander: writes results/comparison.json
+python -m operant_lunarlander.operant               # operant battery: writes results/operant_battery.json
 python -m operant_lunarlander.schedules             # matching-law fit
-pytest -q                                            # 11 tests
+pytest -q                                            # 18 tests
 ```
 
 Optional optimality ceiling:
@@ -83,27 +129,37 @@ What *is* stable across binning: policy divergence (mean TV ≈ 0.63–0.75 for 
 
 ## Binding constraint and next steps
 
-To turn the performance comparison into a clean test of maximization-vs-melioration:
+The clean maximization-vs-melioration separation is **delivered** on the melioration trap (above), where the state is low-dimensional and tabular learning is not coverage-starved. The remaining open item is the *LunarLander* performance comparison specifically:
 
 1. Replace binning with tile/coarse coding (linear function approximation) so (a)'s foresight can generalize across states — without generalization a tabular agent cannot express a landing policy on this observation space.
 2. Match the eval protocol (same temperature for both, or report both deterministic and stochastic reads for each) to remove the greedy-vs-stochastic asymmetry.
-3. Add a concVR / melioration-trap diagnostic where matching is *provably* suboptimal, so divergence from optimality is attributable to melioration rather than to representation.
+3. ~~Add a melioration-trap diagnostic where matching is provably suboptimal~~ — **done** (`MeliorationTrap`); this is now the headline discriminator.
 
-These are empirical knobs (`n_train`, `n_bins`, `granularity_sweep`, the schedule set), not design questions. Whether the gap survives is to be measured, not assumed.
+These are empirical knobs (`n_train`, `n_bins`, `granularity_sweep`, the schedule set, the trap parameters), not design questions. Whether the *LunarLander* gap survives function approximation is to be measured, not assumed.
 
 ## Counterpoint tracking
 
 ```
 old: (b) loses to (a) on LunarLander reward => melioration is the cause
-new: at v0 the gap is a discretization/undertraining artifact (sign-flips across n_bins; both agents fail)
+new: on LunarLander the gap is a discretization/undertraining artifact (sign-flips across n_bins; both agents fail)
 because: tabular binning over 8 continuous dims is coverage-starved, so neither rule can express a good policy
-  - may be true because: with function approximation and matched eval the gap may stabilize and reveal a real maximize-vs-meliorate difference
-  - may be wrong because: the difference could remain dominated by representation/eval choices; "operant agent loses to TD" is also the *expected* outcome for a descriptive (non-normative) rule, so a loss is not itself evidence of anything
+  - resolved elsewhere by: the melioration trap (low-dim state) cleanly separates the rules; LunarLander transfer still needs function approximation
+  - caution: "operant agent loses to TD" is also the expected outcome for a descriptive rule, so a LunarLander loss alone is not evidence of anything
 
 old: concVI-VI matching (slope≈1) proves (b) is melioration-specific
-new: it proves (b) produces lawful reinforcement-proportional allocation, necessary but not sufficient for melioration-vs-maximization
+new: it proves (b) produces lawful reinforcement-proportional allocation, necessary but not sufficient
 because: on VI schedules matching ≈ maximizing, so a working maximizer would also show slope≈1
-  - resolved by: adding a concVR / melioration-trap schedule where the two equilibria provably differ
+  - resolved by: the melioration trap, where matching point (0.8) and optimum (0.4) provably differ and only the myopic rule is caught
+
+old: the melioration trap proves (b) is uniquely suboptimal
+new: it proves myopia is caught by a trap that foresight escapes; the trap separates myopic-vs-bootstrapping, which is one of the two axes
+because: a myopic maximizer (gradient bandit) would also be caught — the escape is due to bootstrapping over the allocation-state, not to "maximizing" per se
+  - so the trap isolates the temporal-credit axis; the selection axis (greedy vs matching) is isolated by the VI-VI matching control
+
+old: extinction ordering (CRF most resistant) is the partial-reinforcement-extinction effect
+new: it is the opposite — the acquired-value-magnitude effect (anti-PREE)
+because: a value learner extinguishes fastest where acquired value is lowest (sparse schedules); real PREE needs discrimination/sequential memory
+  - PREE is explicitly out of reach for this rule class and is not claimed
 ```
 
 ## References
